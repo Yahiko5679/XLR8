@@ -16,23 +16,22 @@ sys.path.insert(0, _ROOT)
 os.chdir(_ROOT)
 
 # ─────────────────────────────────────────────
-# Config
+# Config & DB
 # ─────────────────────────────────────────────
 from config import BOT_TOKEN, OWNER_ID
-from database.mongo import connect_db, close_db
+from database import CosmicBotz
 from middlewares.auth import AuthMiddleware
 from handlers import start, admin, post
 from handlers import filter as filter_handler
 from handlers import group
 from utils.scheduler import setup_scheduler, stop_scheduler
 
-PORT = int(os.environ.get("PORT", 8080))
+PORT        = int(os.environ.get("PORT", 8080))
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")
 WEBHOOK_PATH = "/webhook"
 
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN is missing!")
-
 if not WEBHOOK_URL:
     raise ValueError("❌ WEBHOOK_URL is missing! Set it in Render env vars.")
 
@@ -52,20 +51,17 @@ bot = Bot(
     token=BOT_TOKEN,
     default=DefaultBotProperties(parse_mode=ParseMode.HTML),
 )
-
 dp = Dispatcher()
 
-# ── Middleware ────────────────────────────────
 dp.message.middleware(AuthMiddleware())
 dp.callback_query.middleware(AuthMiddleware())
 dp.my_chat_member.middleware(AuthMiddleware())
 
-# ── Routers (order matters — specific before catch-all) ──────────────────────
-dp.include_router(group.router)           # group join/leave/verify
-dp.include_router(start.router)           # /start /help /stats
-dp.include_router(admin.router)           # slots, admins, settings
-dp.include_router(post.router)            # /addcontent TMDB wizard
-dp.include_router(filter_handler.router)  # letter/search — MUST be last
+dp.include_router(group.router)
+dp.include_router(start.router)
+dp.include_router(admin.router)
+dp.include_router(post.router)
+dp.include_router(filter_handler.router)
 
 LOGGER.info("✅ All routers loaded")
 
@@ -73,21 +69,20 @@ LOGGER.info("✅ All routers loaded")
 # Startup
 # ─────────────────────────────────────────────
 async def on_startup(bot: Bot):
-    await connect_db()
+    await CosmicBotz.connect()
     setup_scheduler(bot)
 
     webhook = f"{WEBHOOK_URL.rstrip('/')}{WEBHOOK_PATH}"
     await bot.set_webhook(url=webhook, drop_pending_updates=True)
     LOGGER.info(f"✅ Webhook set → {webhook}")
 
-    # Notify owner
     try:
         await bot.send_message(
             chat_id=OWNER_ID,
             text="<b><blockquote>🤖 Auto Filter CosmicBotz Started ✅</blockquote></b>",
         )
     except Exception as e:
-        LOGGER.warning(f"Could not notify owner {OWNER_ID}: {e}")
+        LOGGER.warning(f"Could not notify owner: {e}")
 
 
 # ─────────────────────────────────────────────
@@ -96,9 +91,9 @@ async def on_startup(bot: Bot):
 async def on_shutdown(bot: Bot):
     LOGGER.info("⛔ Shutting down...")
     stop_scheduler()
-    await close_db()
+    await CosmicBotz.close()
     await bot.session.close()
-    LOGGER.info("✅ Bot session closed.")
+    LOGGER.info("✅ Shutdown complete.")
 
 
 # ─────────────────────────────────────────────
@@ -110,18 +105,11 @@ def main():
 
     app = web.Application()
 
-    # Root endpoint
     app.router.add_get("/", lambda r: web.Response(text="Auto Filter CosmicBotz Running!"))
-
-    # Health check (set this as Health Check URL in Render dashboard)
     app.router.add_get("/health", lambda r: web.Response(text="OK"))
-
-    # Allow GET on webhook path (prevents 405 → Render restart issue)
     app.router.add_get(WEBHOOK_PATH, lambda r: web.Response(text="Webhook Alive"))
 
-    # Telegram webhook handler (POST)
     SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
-
     setup_application(app, dp, bot=bot)
 
     LOGGER.info(f"🌐 Starting on port {PORT}")
