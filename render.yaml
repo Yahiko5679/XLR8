@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: anireal-filter-bot
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    plan: free
+
+    # Health check — Render pings this to keep the service alive
+    healthCheckPath: /health
+
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: MONGO_URI
+        sync: false
+      - key: TMDB_API_KEY
+        sync: false
+      - key: OWNER_ID
+        sync: false
+      - key: WEBHOOK_URL
+        sync: false           # set to: https://your-app-name.onrender.com
+      - key: LOG_CHANNEL_ID
+        sync: false
+      - key: AUTO_REVOKE_MINUTES
+        value: "30"
