@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: anireal-filter-bot
+    name: Cosmic Auto Filter
     runtime: python
     buildCommand: pip install -r requirements.txt
     startCommand: python bot.py
